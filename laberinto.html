@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lab Escape (HTML con Niebla de Guerra)</title>
+    
+    <style>
+        /* --- Configuración General --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-size: 16px;
+        }
+
+        /* --- Estructura UI del Juego --- */
+        #game-ui-container {
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+            align-items: flex-start;
+        }
+
+        #ui-panel {
+            width: 280px;
+            background-color: #2c2c2c;
+            border: 2px solid #555;
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        #ui-panel h2 {
+            border-bottom: 2px solid #555;
+            padding-bottom: 5px;
+            color: #4caf50; /* Verde "inteligente" */
+        }
+
+        #stats-panel p {
+            font-size: 1.1em;
+            line-height: 1.6;
+        }
+        #stats-panel span {
+            font-weight: bold;
+            color: #fff;
+            float: right;
+        }
+
+        /* --- Registro de Mensajes --- */
+        #message-log {
+            background-color: #111;
+            border: 1px solid #444;
+            border-radius: 4px;
+            height: 200px;
+            overflow-y: scroll;
+            padding: 10px;
+            display: flex;
+            flex-direction: column-reverse; /* Mensajes nuevos abajo */
+        }
+        #message-log p {
+            font-size: 0.9em;
+            margin-top: 5px;
+            line-height: 1.4;
+            color: #ccc;
+        }
+        #message-log p:first-child {
+            color: #fff; /* Mensaje más reciente */
+        }
+
+
+        /* --- Contenedor del Laberinto --- */
+        #game-container {
+            display: grid;
+            border: 4px solid #4caf50;
+            background-color: #000;
+        }
+
+        /* El 'tile' es la celda (equivalente a tu '██' o '  ') */
+        .tile {
+            width: 32px;
+            height: 32px;
+            font-size: 24px; /* Tamaño del emoji */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* Eliminamos la transición aquí para no afectar la niebla */
+        }
+
+        /* Estilos de Celda (Tus '1' y '0') */
+        .path { background-color: #333; }
+        .wall { background-color: #555; }
+
+        /* El jugador (tu '♣') */
+        .player {
+            transform: scale(1.1);
+            z-index: 10;
+        }
+        
+        /* --- ESTILOS PARA LA NIEBLA DE GUERRA --- */
+        /* Celdas NO exploradas */
+        .unexplored {
+            background-color: #000; /* Completamente negro */
+            color: #000; /* Oculta cualquier emoji */
+            border: 1px solid #000;
+        }
+        /* Celdas exploradas pero FUERA del rango de visión actual */
+        .faded-tile {
+            background-color: #222; /* Más oscuro que el PATH normal */
+            color: #444; /* Emojis más oscuros */
+        }
+        /* Paredes exploradas pero fuera de visión */
+        .faded-tile.wall {
+            background-color: #333; /* Paredes atenuadas un poco menos oscuras que el camino atenuado */
+            color: #333;
+        }
+
+
+        /* --- Pantallas Modales (Inicio / Fin) --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-content {
+            background-color: #f0f0f0;
+            color: #1a1a1a;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            min-width: 350px;
+        }
+        .modal-content h2, .modal-content h3 {
+            margin-bottom: 15px;
+        }
+        .modal-content p {
+            margin-bottom: 20px;
+        }
+        .modal-content input {
+            width: 80%;
+            padding: 10px;
+            margin-bottom: 20px;
+            font-size: 1em;
+        }
+        .modal-content button {
+            padding: 12px 25px;
+            font-size: 1em;
+            font-weight: bold;
+            color: #fff;
+            background-color: #4caf50;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .modal-content button:hover {
+            background-color: #45a049;
+        }
+
+        /* Lista de Puntuaciones */
+        #high-score-list {
+            list-style-position: inside;
+            text-align: left;
+            margin-bottom: 20px;
+            background-color: #eee;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #high-score-list li {
+            padding: 5px;
+        }
+        #high-score-list li:nth-child(odd) {
+            background-color: #ddd;
+        }
+    </style>
+    </head>
+<body>
+
+    <div id="start-screen" class="modal-overlay active">
+        <div class="modal-content">
+            <h2>Lab Escape</h2>
+            <p>Introduce tu nombre para empezar:</p>
+            <input type="text" id="player-name-input" value="Aventurero" maxlength="20">
+            <button id="start-game-button">Empezar Juego</button>
+        </div>
+    </div>
+
+    <div id="end-screen" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="end-title">Juego Terminado</h2>
+            <p>Puntuación final: <span id="final-score">0</span></p>
+            <h3>🏆 Puntuaciones Altas 🏆</h3>
+            <ol id="high-score-list"></ol>
+            <button id="play-again-button">Jugar de Nuevo</button>
+        </div>
+    </div>
+
+    <div id="game-ui-container">
+        <div id="game-container">
+            </div>
+
+        <div id="ui-panel">
+            <h2>Estadísticas</h2>
+            <div id="stats-panel">
+                <p><strong>Jugador:</strong> <span id="stat-player">---</span></p>
+                <p><strong>Nivel:</strong> <span id="stat-level">0</span></p>
+                <p><strong>❤️ Vidas:</strong> <span id="stat-lives">0</span></p>
+                <p><strong>🔑 Llaves:</strong> <span id="stat-keys">0</span></p>
+                <p><strong>👣 Pasos:</strong> <span id="stat-steps">0</span></p>
+                <p><strong>⏱️ Tiempo:</strong> <span id="stat-time">0s</span></p>
+            </div>
+
+            <h2>Registro</h2>
+            <div id="message-log">
+                <p>¡Bienvenido! Usa W-A-S-D o las flechas para moverte.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Constantes del Mapa (los emojis reemplazan a 'K', 'T', 'D', etc.) ---
+        const WALL = '🧱';
+        const PATH = ' ';
+        const PLAYER = '😀'; // Tu '♣'
+        const KEY = '🔑';
+        const TRAP = '🔥';
+        const DOOR = '🚪';
+        const EXIT = '✅'; // Tu '◘'
+        const PORTAL = '🌀'; // Tu 'TP'
+
+        // --- Estado del Juego ---
+        let player;
+        let highScores = [];
+        let currentLevelIndex;
+        let currentMap;
+        let exploredMap; // <-- Nuevo: Mapa de celdas exploradas
+        let gameStartTime;
+        let gameRunning = false;
+        let timeInterval;
+
+        // --- Configuración de Juego ---
+        const MAZE_SIZE = 25; // Tamaño fijo del laberinto (25x25)
+        const VISION_RADIUS = 3; // Radio de visión del jugador (3 celdas alrededor)
+
+        // --- Elementos del DOM (en lugar de imprimir en consola) ---
+        const gameContainer = document.getElementById('game-container');
+        const messageLog = document.getElementById('message-log');
+        const startScreen = document.getElementById('start-screen');
+        const endScreen = document.getElementById('end-screen');
+        const startGameButton = document.getElementById('start-game-button');
+        const playAgainButton = document.getElementById('play-again-button');
+        const playerNameInput = document.getElementById('player-name-input');
+        const endTitle = document.getElementById('end-title');
+        const finalScoreEl = document.getElementById('final-score');
+        const highScoreList = document.getElementById('high-score-list');
+
+        // Selectores de Estadísticas
+        const statPlayer = document.getElementById('stat-player');
+        const statLevel = document.getElementById('stat-level');
+        const statLives = document.getElementById('stat-lives');
+        const statKeys = document.getElementById('stat-keys');
+        const statSteps = document.getElementById('stat-steps');
+        const statTime = document.getElementById('stat-time');
+
+
+        /**
+         * Clase del Jugador (Almacena tu 'player_stats')
+         */
+        class Player {
+            constructor(name) {
+                this.name = name;
+                this.x = 1;
+                this.y = 1;
+                this.lives = 3;
+                this.keys = 0;
+                this.score = 0;
+                // Estadísticas para puntuación
+                this.steps = 0;
+                this.keysFound = 0;
+                this.doorsUnlocked = 0;
+                this.portalsUsed = 0;
+            }
+        }
+
+        // --- Event Listeners (reemplaza a msvcrt.getch()) ---
+        startGameButton.addEventListener('click', runGame);
+        playAgainButton.addEventListener('click', runGame);
+        // Escucha CUALQUIER tecla presionada en la página
+        document.addEventListener('keydown', handleInput);
+
+
+        /**
+         * Inicia el juego.
+         * Esta función es llamada por el botón "Empezar Juego".
+         */
+        function runGame() {
+            const playerName = playerNameInput.value || "Aventurero";
+            
+            // Ocultar modales y mostrar UI
+            startScreen.classList.remove('active');
+            endScreen.classList.remove('active');
+            
+            initializeGame(playerName);
+            startLevel();
+            renderGame();
+            renderStats();
+            gameRunning = true;
+            
+            // Iniciar temporizador
+            if (timeInterval) clearInterval(timeInterval);
+            timeInterval = setInterval(updateTime, 1000);
+        }
+
+        /**
+         * Prepara un nuevo juego, reiniciando todas las variables.
+         */
+        function initializeGame(playerName) {
+            player = new Player(playerName);
+            currentLevelIndex = 0;
+            gameStartTime = new Date(); // Registra el tiempo de inicio
+            logMessage(`¡Juego iniciado! ¡Suerte, ${playerName}!`);
+        }
+
+        /**
+         * Configura el nivel actual.
+         */
+        function startLevel() {
+            const size = MAZE_SIZE;
+            
+            // 1. Crear mapa de paredes
+            let map = Array(size).fill(null).map(() => Array(size).fill(WALL));
+            
+            // 2. Iniciar DFS en una coordenada IMPAR
+            const startX = Math.floor(Math.random() * (size / 2)) * 2 + 1;
+            const startY = Math.floor(Math.random() * (size / 2)) * 2 + 1;
+            currentMap = carvePassages(startX, startY, map);
+            
+            // 3. Colocar elementos del juego
+            placeGameElements(currentMap, currentLevelIndex + 1); // Pasamos nivel actual para dificultad
+            
+            // Encontrar la posición inicial del jugador
+            const startPos = findPlayerStart(currentMap);
+            if (startPos) {
+                player.x = startPos.x;
+                player.y = startPos.y;
+            } else {
+                // Fallback por si el generador falla
+                currentMap[1][1] = PLAYER;
+                player.x = 1;
+                player.y = 1;
+            }
+
+            // Inicializar exploredMap para el nuevo nivel
+            exploredMap = Array(size).fill(null).map(() => Array(size).fill(false));
+            markExploredArea(player.x, player.y); // Marcar el área inicial como explorada
+
+            logMessage(`--- Nivel ${currentLevelIndex + 1} iniciado ---`);
+        }
+
+        /**
+         * Maneja la entrada del teclado.
+         * Esta es la función principal del bucle de juego.
+         * Reemplaza tu 'while True:' y 'msvcrt.getch()'.
+         */
+        function handleInput(e) {
+            if (!gameRunning) return; // Si el juego está pausado, no hacer nada
+
+            let move;
+            switch (e.key) {
+                case 'w': case 'W': case 'ArrowUp':
+                    move = 'w';
+                    break;
+                case 'a': case 'A': case 'ArrowLeft':
+                    move = 'a';
+                    break;
+                case 's': case 'S': case 'ArrowDown':
+                    move = 's';
+                    break;
+                case 'd': case 'D': case 'ArrowRight':
+                    move = 'd';
+                    break;
+                default:
+                    return; // No hacer nada si no es una tecla de juego
+            }
+            
+            e.preventDefault(); // Evitar que la página se desplace con las flechas
+
+            // Procesa el movimiento (lógica idéntica a tu 'procesar_movimiento')
+            const gameState = processMove(move);
+
+            // Actualizar la vista (reemplaza a tu 'imprimirLaberinto')
+            renderGame();
+            renderStats();
+
+            // Evaluar el resultado del movimiento
+            switch (gameState) {
+                case 'win_level':
+                    gameRunning = false; // Pausar entrada
+                    logMessage(`¡Nivel ${currentLevelIndex + 1} completado!`);
+                    setTimeout(() => {
+                        currentLevelIndex++;
+                        startLevel();
+                        renderGame();
+                        renderStats();
+                        gameRunning = true;
+                    }, 1000); // Pequeña pausa antes del siguiente nivel
+                    break;
+                case 'win_game':
+                    gameRunning = false;
+                    logMessage("¡FELICIDADES! ¡Has escapado de todos los laberintos!");
+                    endGame(true); // 'true' = el jugador ganó
+                    break;
+                case 'game_over':
+                    gameRunning = false;
+                    logMessage("¡GAME OVER! Te has quedado sin vidas.");
+                    endGame(false); // 'false' = el jugador perdió
+                    break;
+                case 'blocked':
+                    // ¡MODIFICACIÓN! Ya no mostramos el mensaje "Movimiento bloqueado".
+                    // El jugador simplemente no se mueve.
+                    break;
+                case 'moved':
+                    // El juego continúa
+                    break;
+            }
+        }
+
+
+        /**
+         * Dibuja el mapa en el HTML, aplicando la niebla de guerra y el campo de visión.
+         */
+        function renderGame() {
+            gameContainer.innerHTML = ''; // Limpiar el contenedor
+            
+            const numCols = currentMap[0].length;
+            gameContainer.style.gridTemplateColumns = `repeat(${numCols}, 32px)`;
+
+            for (let y = 0; y < currentMap.length; y++) {
+                for (let x = 0; x < currentMap[y].length; x++) {
+                    const tile = document.createElement('div');
+                    const currentTileType = currentMap[y][x];
+
+                    // Calcular distancia al jugador
+                    const distance = Math.sqrt(
+                        Math.pow(x - player.x, 2) + Math.pow(y - player.y, 2)
+                    );
+
+                    tile.className = 'tile'; // Clase base
+
+                    if (exploredMap[y][x]) { // Si la celda ha sido explorada
+                        if (distance <= VISION_RADIUS) {
+                            // Está dentro del campo de visión actual
+                            tile.textContent = currentTileType;
+                            if (currentTileType === WALL) tile.classList.add('wall');
+                            else if (currentTileType === PATH) tile.classList.add('path');
+                            // Si es jugador, se añade la clase al final
+                        } else {
+                            // Ha sido explorada, pero está fuera del campo de visión actual (atenuada)
+                            tile.classList.add('faded-tile');
+                            if (currentTileType === WALL) {
+                                tile.classList.add('wall');
+                                tile.textContent = '🧱'; // Sombra de pared
+                            } else if (currentTileType === PATH) {
+                                tile.classList.add('path');
+                                tile.textContent = ' '; // Sombra de camino
+                            } else {
+                                // Objetos fuera de visión (llaves, trampas, etc.) también atenuados
+                                tile.textContent = currentTileType; 
+                            }
+                        }
+                    } else {
+                        // La celda NO ha sido explorada NUNCA (completamente oculta)
+                        tile.classList.add('unexplored');
+                        tile.textContent = ''; // Aseguramos que no se vea nada
+                    }
+                    
+                    // Colocar al jugador siempre en su posición actual (visible)
+                    if (x === player.x && y === player.y) {
+                        tile.textContent = PLAYER;
+                        tile.classList.add('player');
+                        tile.classList.remove('unexplored', 'faded-tile'); // Asegurar que sea visible
+                    }
+
+                    gameContainer.appendChild(tile);
+                }
+            }
+        }
+
+        /**
+         * Marca un área alrededor del jugador como explorada.
+         */
+        function markExploredArea(centerX, centerY) {
+            for (let dy = -VISION_RADIUS; dy <= VISION_RADIUS; dy++) {
+                for (let dx = -VISION_RADIUS; dx <= VISION_RADIUS; dx++) {
+                    const y = centerY + dy;
+                    const x = centerX + dx;
+
+                    // Asegurarse de que las coordenadas estén dentro del mapa
+                    if (y >= 0 && y < MAZE_SIZE && x >= 0 && x < MAZE_SIZE) {
+                        // Solo marcar como explorado si está dentro de un círculo (más bonito que un cuadrado)
+                        const distance = Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2));
+                        if (distance <= VISION_RADIUS + 0.5) { // Pequeño margen
+                            exploredMap[y][x] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+
+        /**
+         * Actualiza el panel de estadísticas.
+         * Reemplaza la parte de 'imprimir_interfaz' de Python.
+         */
+        function renderStats() {
+            statPlayer.textContent = player.name;
+            statLevel.textContent = currentLevelIndex + 1;
+            statLives.textContent = player.lives;
+            statKeys.textContent = player.keys;
+            statSteps.textContent = player.steps;
+        }
+
+        /**
+         * Actualiza el contador de tiempo.
+         */
+        function updateTime() {
+            if (!gameRunning) return;
+            const timeTakenInSeconds = Math.floor((new Date() - gameStartTime) / 1000);
+            statTime.textContent = `${timeTakenInSeconds}s`;
+        }
+
+        /**
+         * Añade un mensaje al registro del juego.
+         */
+        function logMessage(msg) {
+            const p = document.createElement('p');
+            p.textContent = msg;
+            messageLog.prepend(p); // Añadir al principio
+        }
+
+        /**
+         * Procesa la entrada del jugador y actualiza el estado del juego.
+         * (Lógica idéntica a 'procesar_movimiento' de Python)
+         */
+        function processMove(move) {
+            let newX = player.x;
+            let newY = player.y;
+
+            if (move === 'w') newY--;
+            else if (move === 's') newY++;
+            else if (move === 'a') newX--;
+            else if (move === 'd') newX++;
+            else return 'invalid';
+
+            // Comprobar si el movimiento está dentro de los límites
+            if (newY < 0 || newY >= currentMap.length || newX < 0 || newX >= currentMap[0].length) {
+                return 'blocked';
+            }
+
+            const targetCell = currentMap[newY][newX];
+
+            switch (targetCell) {
+                case WALL:
+                    return 'blocked';
+
+                case KEY:
+                    player.keys++;
+                    player.keysFound++;
+                    logMessage("¡Llave encontrada!");
+                    break;
+
+                case TRAP:
+                    player.lives--;
+                    logMessage(`¡Caíste en una trampa! Vidas restantes: ${player.lives}`);
+                    if (player.lives <= 0) {
+                        currentMap[player.y][player.x] = '💀'; // Marca el lugar de la muerte
+                        return 'game_over';
+                    }
+                    break;
+
+                case DOOR:
+                    if (player.keys > 0) {
+                        player.keys--;
+                        player.doorsUnlocked++;
+                        logMessage("¡Puerta desbloqueada!");
+                    } else {
+                        logMessage("¡La puerta está cerrada! Necesitas una llave.");
+                        return 'blocked';
+                    }
+                    break;
+
+                case PORTAL:
+                    player.portalsUsed++;
+                    logMessage("¡Portal! Teletransportando...");
+                    const targetPortal = findTeleportTarget(newX, newY);
+                    if (targetPortal) {
+                        newX = targetPortal.x;
+                        newY = targetPortal.y;
+                    }
+                    break;
+
+                case EXIT:
+                    currentMap[player.y][player.x] = PATH;
+                    if (currentLevelIndex + 1 >= 3) { // 3 niveles en total (0, 1, 2)
+                        return 'win_game';
+                    } else {
+                        return 'win_level';
+                    }
+                
+                case PATH:
+                    // Simplemente se mueve
+                    break;
+            }
+
+            // Actualizar Posición del Jugador
+            currentMap[player.y][player.x] = PATH;
+            player.x = newX;
+            player.y = newY;
+            currentMap[player.y][player.x] = PLAYER;
+            player.steps++;
+            
+            markExploredArea(player.x, player.y); // Marcar nueva área como explorada
+
+            return 'moved';
+        }
+
+        /**
+         * Finaliza el juego, calcula y muestra la puntuación.
+         */
+        function endGame(didWin) {
+            gameRunning = false;
+            clearInterval(timeInterval); // Detener el tiempo
+
+            if (didWin) {
+                endTitle.textContent = "¡Has Escapado!";
+                player.score = calculateScore(true);
+            } else {
+                endTitle.textContent = "¡Juego Terminado!";
+                player.score = calculateScore(false);
+            }
+            
+            logMessage(`Puntuación final para ${player.name}: ${player.score}`);
+            finalScoreEl.textContent = player.score;
+
+            // Añadir y ordenar puntuaciones
+            highScores.push({ name: player.name, score: player.score, level: currentLevelIndex + 1 });
+            highScores.sort((a, b) => b.score - a.score);
+
+            displayHighScores();
+            endScreen.classList.add('active'); // Mostrar pantalla final
+        }
+
+        /**
+         * Calcula la puntuación final. (Lógica de la pizarra)
+         */
+        function calculateScore(didWin) {
+            const timeTakenInSeconds = (new Date() - gameStartTime) / 1000;
+            
+            let score = (currentLevelIndex + 1) * 5000;
+            score += player.lives * 1000;
+            
+            if (didWin) {
+                score += 10000;
+            }
+
+            score -= timeTakenInSeconds * 5;
+            score -= player.steps * 2;
+            score -= player.portalsUsed * 50;
+            score += player.keysFound * 100;
+            score += player.doorsUnlocked * 200;
+
+            return Math.max(0, Math.floor(score));
+        }
+
+        /**
+         * Muestra la tabla de puntuaciones en el HTML.
+         */
+        function displayHighScores() {
+            highScoreList.innerHTML = ''; // Limpiar lista
+            
+            if (highScores.length === 0) {
+                highScoreList.innerHTML = '<li>Aún no hay puntuaciones.</li>';
+            } else {
+                highScores.slice(0, 5).forEach((entry, index) => { // Mostrar solo el Top 5
+                    const li = document.createElement('li');
+                    li.textContent = `${index + 1}. ${entry.name} - ${entry.score} pts (Nivel ${entry.level})`;
+                    highScoreList.appendChild(li);
+                });
+            }
+        }
+
+
+        // --- === SECCIÓN DE GENERADOR DE LABERINTO (Tu lógica DFS) === --- //
+
+        /**
+         * Genera un nivel aleatorio y coloca los elementos del juego.
+         */
+        function placeGameElements(grid, levelNum) {
+            // Colocar Salida (lejos del jugador)
+            let exitPos = findRandomEmptyCell(grid, true); // true = busca en la esquina opuesta
+            grid[exitPos.y][exitPos.x] = EXIT;
+            
+            // Colocar Llaves (igual al número de nivel)
+            for (let i = 0; i < levelNum; i++) {
+                let pos = findRandomEmptyCell(grid);
+                grid[pos.y][pos.x] = KEY;
+            }
+            
+            // Colocar Puertas
+            for (let i = 0; i < levelNum; i++) {
+                let pos = findRandomEmptyCell(grid);
+                grid[pos.y][pos.x] = DOOR;
+            }
+
+            // Colocar Trampas
+            for (let i = 0; i < levelNum * 2; i++) {
+                let pos = findRandomEmptyCell(grid);
+                grid[pos.y][pos.x] = TRAP;
+            }
+            
+            // Colocar Portales (un par)
+            if (levelNum > 0) {
+                let pos1 = findRandomEmptyCell(grid);
+                grid[pos1.y][pos1.x] = PORTAL;
+                let pos2 = findRandomEmptyCell(grid);
+                grid[pos2.y][pos2.x] = PORTAL;
+            }
+            return grid;
+        }
+
+        /**
+         * Algoritmo recursivo para "cavar" el laberinto. (Tu 'dfs')
+         */
+        function carvePassages(cx, cy, grid) {
+            const directions = [[0, -2], [0, 2], [-2, 0], [2, 0]]; // Norte, Sur, Oeste, Este (2 pasos)
+            directions.sort(() => Math.random() - 0.5); // Barajar direcciones
+
+            grid[cy][cx] = PATH; // Marcar celda actual como camino
+
+            for (let [dx, dy] of directions) {
+                const nx = cx + dx;
+                const ny = cy + dy;
+
+                // Comprobar si el vecino está dentro de los límites
+                if (ny > 0 && ny < grid.length - 1 && nx > 0 && nx < grid[0].length - 1) {
+                    if (grid[ny][nx] === WALL) {
+                        // Quitar la pared intermedia
+                        grid[cy + dy / 2][cx + dx / 2] = PATH;
+                        carvePassages(nx, ny, grid); // Recursión
+                    }
+                }
+            }
+            return grid;
+        }
+
+        /**
+         * Encuentra una celda de CAMINO vacía aleatoria para colocar un objeto.
+         */
+        function findRandomEmptyCell(grid, far = false) {
+            let emptyCells = [];
+            const height = grid.length;
+            const width = grid[0].length;
+            
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    // Asegurarse de que la celda no sea donde ya está el jugador si estamos buscando otros objetos
+                    if (grid[y][x] === PATH) {
+                        // 'far' se usa para la salida, para que esté en el último cuadrante
+                        if (far) {
+                            if (x > width / 2 && y > height / 2) { // Intenta colocarla en la mitad inferior-derecha
+                                emptyCells.push({ x, y });
+                            }
+                        } else {
+                            emptyCells.push({ x, y });
+                        }
+                    }
+                }
+            }
+            
+            if (emptyCells.length > 0) {
+                return emptyCells[Math.floor(Math.random() * emptyCells.length)];
+            } else {
+                // Fallback si 'far' no encuentra nada o no hay muchas celdas libres
+                if (far) return findRandomEmptyCell(grid, false);
+                return { x: Math.floor(width / 2), y: Math.floor(height / 2) }; // Centro
+            }
+        }
+
+
+        // --- === SECCIÓN DE UTILIDADES === --- //
+
+        /**
+         * Encuentra la posición inicial del jugador en un mapa dado.
+         */
+        function findPlayerStart(map) {
+            for (let y = 0; y < map.length; y++) {
+                for (let x = 0; x < map[y].length; x++) {
+                    if (map[y][x] === PLAYER) {
+                        return { x, y };
+                    }
+                }
+            }
+            return null; // No encontrado
+        }
+
+        /**
+         * Encuentra el otro portal en el mapa.
+         */
+        function findTeleportTarget(playerX, playerY) {
+            for (let y = 0; y < currentMap.length; y++) {
+                for (let x = 0; x < currentMap[y].length; x++) {
+                    if (currentMap[y][x] === PORTAL && (x !== playerX || y !== playerY)) {
+                        return { x, y }; // Devuelve el primer portal que no sea el actual
+                    }
+                }
+            }
+            return null; // No hay otro portal
+        }
+    </script>
+    </body>
+</html>
